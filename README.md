@@ -179,3 +179,4 @@ sudo systemctl status certbot.timer
 ## 출처
 
 - https://rupijun.tistory.com/entry/N8N-Self-Hosting-Docker-compose-구성
+- https://svrforum.com/svr/888028
