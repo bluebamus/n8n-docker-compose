@@ -30,8 +30,8 @@ services:
       - postgres
       - redis
     volumes:
-      - n8n_data:/home/node/.n8n
-      - config:/home/config
+      - ./n8n_data:/home/node/.n8n
+      - ./config:/home/node/config
     depends_on:
       redis:
         condition: service_healthy
@@ -75,10 +75,8 @@ services:
 
 
 volumes:
-  n8n_data:
   postgres_data:
   redis_storage:
-  config:
 
 networks:
   n8n_network:
