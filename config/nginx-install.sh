@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Nginx Configuration Install Script for n8n (Alpine Linux)
+# Nginx Configuration Install Script for n8n (Alpine Linux / Docker)
 # Usage: ./nginx-install.sh [domain]
 
 set -e
@@ -13,7 +13,7 @@ NC='\033[0m'
 
 # Check if running as root
 if [ "$(id -u)" -ne 0 ]; then
-    echo -e "${RED}Error: Please run as root${NC}"
+    printf "${RED}Error: Please run as root${NC}\n"
     exit 1
 fi
 
@@ -22,21 +22,21 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONF_FILE="${SCRIPT_DIR}/n8n.conf"
 DOMAIN="${1:-your_domain.com}"
 
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Nginx Configuration Install Script${NC}"
-echo -e "${GREEN}  (Alpine Linux)${NC}"
-echo -e "${GREEN}========================================${NC}"
+printf "${GREEN}========================================${NC}\n"
+printf "${GREEN}  Nginx Configuration Install Script${NC}\n"
+printf "${GREEN}  (Alpine Linux / Docker)${NC}\n"
+printf "${GREEN}========================================${NC}\n"
 echo ""
 
 # Check if n8n.conf exists
 if [ ! -f "$CONF_FILE" ]; then
-    echo -e "${RED}Error: n8n.conf not found in ${SCRIPT_DIR}${NC}"
+    printf "${RED}Error: n8n.conf not found in ${SCRIPT_DIR}${NC}\n"
     exit 1
 fi
 
 # Check if nginx is installed
 if ! command -v nginx > /dev/null 2>&1; then
-    echo -e "${YELLOW}Nginx is not installed. Installing...${NC}"
+    printf "${YELLOW}Nginx is not installed. Installing...${NC}\n"
     apk update
     apk add nginx
 fi
@@ -47,70 +47,83 @@ mkdir -p /etc/nginx/sites-enabled
 
 # Check if nginx.conf includes sites-enabled
 if ! grep -q "include /etc/nginx/sites-enabled" /etc/nginx/nginx.conf; then
-    echo -e "${YELLOW}Adding sites-enabled include to nginx.conf...${NC}"
+    printf "${YELLOW}Adding sites-enabled include to nginx.conf...${NC}\n"
     sed -i '/http {/a \    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
 fi
 
 # Step 1: Copy config file to sites-available and update domain
-echo -e "${GREEN}[1/5] Copying n8n.conf to /etc/nginx/sites-available/...${NC}"
+printf "${GREEN}[1/5] Copying n8n.conf to /etc/nginx/sites-available/...${NC}\n"
 cp "$CONF_FILE" /etc/nginx/sites-available/n8n
 
 # Step 2: Update server_name if domain provided
 if [ "$DOMAIN" != "your_domain.com" ]; then
-    echo -e "${GREEN}[2/5] Updating server_name to ${DOMAIN}...${NC}"
+    printf "${GREEN}[2/5] Updating server_name to ${DOMAIN}...${NC}\n"
     sed -i "s/server_name your_domain.com;/server_name ${DOMAIN};/" /etc/nginx/sites-available/n8n
 else
-    echo -e "${YELLOW}[2/5] Using default domain. Update /etc/nginx/sites-available/n8n later.${NC}"
+    printf "${YELLOW}[2/5] Using default domain. Update /etc/nginx/sites-available/n8n later.${NC}\n"
 fi
 
 # Step 3: Create symbolic link to sites-enabled
-echo -e "${GREEN}[3/5] Creating symbolic link to sites-enabled...${NC}"
+printf "${GREEN}[3/5] Creating symbolic link to sites-enabled...${NC}\n"
 if [ -L /etc/nginx/sites-enabled/n8n ]; then
-    echo -e "${YELLOW}Symbolic link already exists. Removing old link...${NC}"
+    printf "${YELLOW}Symbolic link already exists. Removing old link...${NC}\n"
     rm /etc/nginx/sites-enabled/n8n
 fi
 ln -s /etc/nginx/sites-available/n8n /etc/nginx/sites-enabled/
 
 # Step 4: Test nginx configuration
-echo -e "${GREEN}[4/5] Testing Nginx configuration...${NC}"
+printf "${GREEN}[4/5] Testing Nginx configuration...${NC}\n"
 if nginx -t; then
-    echo -e "${GREEN}Nginx configuration test passed!${NC}"
+    printf "${GREEN}Nginx configuration test passed!${NC}\n"
 else
-    echo -e "${RED}Nginx configuration test failed!${NC}"
-    echo -e "${YELLOW}Removing invalid configuration...${NC}"
+    printf "${RED}Nginx configuration test failed!${NC}\n"
+    printf "${YELLOW}Removing invalid configuration...${NC}\n"
     rm /etc/nginx/sites-enabled/n8n
     rm /etc/nginx/sites-available/n8n
     exit 1
 fi
 
-# Step 5: Start/Restart nginx
-echo -e "${GREEN}[5/5] Starting Nginx...${NC}"
-if rc-service nginx status > /dev/null 2>&1; then
-    rc-service nginx restart
+# Step 5: Start/Restart nginx (handle both Docker and standard Alpine)
+printf "${GREEN}[5/5] Starting Nginx...${NC}\n"
+
+# Check if we're in a Docker container (no init system)
+if [ -f /.dockerenv ] || ! command -v rc-service > /dev/null 2>&1; then
+    # Docker environment - use nginx directly
+    if pgrep -x nginx > /dev/null 2>&1; then
+        printf "${YELLOW}Reloading Nginx...${NC}\n"
+        nginx -s reload
+    else
+        printf "${YELLOW}Starting Nginx in foreground mode...${NC}\n"
+        nginx
+    fi
 else
-    rc-service nginx start
+    # Standard Alpine with OpenRC
+    if rc-service nginx status > /dev/null 2>&1; then
+        rc-service nginx restart
+    else
+        rc-service nginx start
+    fi
+    # Enable nginx on boot
+    rc-update add nginx default 2>/dev/null || true
 fi
 
-# Enable nginx on boot
-rc-update add nginx default 2>/dev/null || true
-
 echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Installation Complete!${NC}"
-echo -e "${GREEN}========================================${NC}"
+printf "${GREEN}========================================${NC}\n"
+printf "${GREEN}  Installation Complete!${NC}\n"
+printf "${GREEN}========================================${NC}\n"
 echo ""
-echo -e "Configuration file: ${YELLOW}/etc/nginx/sites-available/n8n${NC}"
-echo -e "Symbolic link: ${YELLOW}/etc/nginx/sites-enabled/n8n${NC}"
+printf "Configuration file: ${YELLOW}/etc/nginx/sites-available/n8n${NC}\n"
+printf "Symbolic link: ${YELLOW}/etc/nginx/sites-enabled/n8n${NC}\n"
 echo ""
-echo -e "${YELLOW}Next steps:${NC}"
+printf "${YELLOW}Next steps:${NC}\n"
 if [ "$DOMAIN" = "your_domain.com" ]; then
     echo "  1. Update 'server_name' in /etc/nginx/sites-available/n8n"
-    echo "  2. Run: nginx -t && rc-service nginx reload"
+    echo "  2. Run: nginx -t && nginx -s reload"
 fi
 echo "  - Run certbot-install.sh to enable HTTPS"
 echo ""
-echo -e "${YELLOW}Useful commands:${NC}"
-echo "  - Check Nginx status: rc-service nginx status"
-echo "  - Reload Nginx: rc-service nginx reload"
+printf "${YELLOW}Useful commands:${NC}\n"
+echo "  - Test config: nginx -t"
+echo "  - Reload Nginx: nginx -s reload"
 echo "  - View Nginx logs: tail -f /var/log/nginx/error.log"
 echo ""
