@@ -124,6 +124,90 @@ sudo ./certbot-install.sh your_domain.com
 
 > 자동 갱신은 systemd timer에 의해 자동으로 처리됩니다.
 
+## 보안 및 추가 설정 (선택 사항)
+
+n8n을 안전하게 운영하기 위해 추가 설정을 적용합니다.
+
+### 방화벽 설정
+
+UFW를 사용해 필요한 포트만 엽니다:
+
+```bash
+sudo apt install ufw -y
+sudo ufw allow 22
+sudo ufw allow 5678
+sudo ufw enable
+```
+
+- SSH(22)와 n8n(5678) 포트를 허용
+- HTTPS를 사용할 경우 443 포트를 추가로 엽니다: `sudo ufw allow 443`
+
+### SSL/TLS 설정 (Nginx + Certbot)
+
+HTTPS를 위해 Nginx를 리버스 프록시로 설정합니다.
+
+#### 1. Nginx 설치
+
+```bash
+sudo apt install nginx -y
+```
+
+#### 2. Nginx 설정 파일 생성
+
+```bash
+sudo nano /etc/nginx/sites-available/n8n
+```
+
+아래 내용을 추가 (도메인 이름은 `your_domain.com`으로 변경):
+
+```nginx
+server {
+    listen 80;
+    server_name your_domain.com;
+
+    location / {
+        proxy_pass http://localhost:5678;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+#### 3. 설정 활성화
+
+```bash
+sudo ln -s /etc/nginx/sites-available/n8n /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+#### 4. Certbot으로 SSL 설정
+
+```bash
+sudo apt install certbot python3-certbot-nginx -y
+sudo certbot --nginx -d your_domain.com
+```
+
+Certbot이 자동으로 Nginx 설정을 HTTPS로 업데이트합니다.
+
+#### 5. docker-compose.yml 업데이트
+
+```bash
+nano docker-compose.yml
+```
+
+- `N8N_PROTOCOL=http`를 `N8N_PROTOCOL=https`로 변경
+- `WEBHOOK_URL`을 `https://your_domain.com/`으로 수정
+
+#### 6. 컨테이너 재시작
+
+```bash
+docker-compose down
+docker-compose up -d
+```
+
 ## 유용한 명령어
 
 ### Docker Compose
