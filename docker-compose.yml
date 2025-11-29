@@ -50,7 +50,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
     volumes:
-      - postgres_data:/var/lib/postgresql
+      - ./postgres_data:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
       interval: 5s
@@ -65,7 +65,7 @@ services:
     container_name: n8n_redis
     restart: always
     volumes:
-      - redis_storage:/data
+      - ./redis_storage:/data
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -76,6 +76,8 @@ services:
 
 
 volumes:
+  n8n_data:
+  config:
   postgres_data:
   redis_storage:
 
