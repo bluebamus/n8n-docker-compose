@@ -1,0 +1,51 @@
+FROM nginx:latest
+
+ENV OS_LOCALE_COUNTRY="en_US"
+ENV OS_LOCALE_ENCODING="UTF-8"
+ENV OS_LOCALE="en_US.UTF-8"
+
+# Locale 설정
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    apt-utils \
+    locales && \
+    localedef -i ${OS_LOCALE_COUNTRY} -f ${OS_LOCALE_ENCODING} ${OS_LOCALE} && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV LANG=${OS_LOCALE} \
+    LANGUAGE=${OS_LOCALE} \
+    LC_ALL=${OS_LOCALE} \
+    LC_CTYPE=${OS_LOCALE} \
+    LC_MESSAGES=${OS_LOCALE}
+
+# Timezone 설정
+RUN apt-get update && \
+    apt-get install -yq tzdata && \
+    ln -sf /usr/share/zoneinfo/Asia/Seoul /etc/localtime && \
+    echo "Asia/Seoul" > /etc/timezone && \
+    dpkg-reconfigure -f noninteractive tzdata && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV TZ="Asia/Seoul"
+
+# Certbot 및 필수 패키지 설치
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    wget \
+    gnupg \
+    cron \
+    certbot \
+    ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# CA 인증서 설정
+RUN wget --no-check-certificate https://curl.haxx.se/ca/cacert.pem && \
+    cp cacert.pem /etc/ssl/certs/ca-certificates.crt && \
+    update-ca-certificates && \
+    rm cacert.pem
+
+# Crontab 설정
+RUN (crontab -l 2>/dev/null; echo "0 5 * * 1 certbot renew --quiet --renew-hook \"service nginx restart\" > /var/log/nginx/crontab_\$(date +\%Y\%m\%d).log 2>&1") | crontab -
+
+# Entrypoint에 cron 추가
+RUN sed -i '/set/i cron' /docker-entrypoint.d/*.sh 2>/dev/null || true

@@ -1,4 +1,33 @@
 services:
+  webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile-nginx
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "5"
+        max-size: "100m"
+    container_name: nginx-gunicorn-webserver
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    environment:
+      TZ: "Asia/Seoul"
+    volumes:
+      - ./config/nginx/:/script/
+      - ./storage/nginx_storage/etc/ngixn:/etc/nginx/
+      - ./storage/nginx_storage/etc/ssl/certs/:/etc/ssl/certs/
+      - ./storage/nginx_storage/etc/ssl/letsencrypt/:/etc/letsencrypt/
+      - ./logs:/log
+      - ./storage/nginx_storage/www:/www
+    depends_on:
+      - n8n
+    networks:
+      network:
+        ipv4_address: 172.26.0.10
+
   n8n:
     image: n8nio/n8n:latest
     container_name: n8n
@@ -6,34 +35,66 @@ services:
     ports:
       - "${N8N_PORT}:5678"
     environment:
-      - N8N_HOST=${N8N_HOST}
+      # ===== 기본 설정 (.env에서 로드) =====
+      # N8N이 바인딩할 호스트 (0.0.0.0 = 모든 인터페이스)
+      - N8N_HOST=0.0.0.0
+      # 외부 접속 포트
       - N8N_PORT=${N8N_PORT}
+      # 프로토콜 (http/https)
       - N8N_PROTOCOL=${N8N_PROTOCOL}
+
+      # ===== 인증 설정 (.env에서 로드) =====
+      # Basic Auth 활성화 여부
       - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE}
+      # Basic Auth 사용자명
       - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      # Basic Auth 비밀번호
       - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+
+      # ===== 웹훅 및 보안 설정 (.env에서 로드) =====
+      # 외부 웹훅 URL (외부에서 워크플로우 트리거 시 사용)
       - WEBHOOK_URL=${WEBHOOK_URL}
+      # 워크플로우 자격증명 암호화 키
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+
+      # ===== 시간대 설정 (.env에서 로드) =====
+      # 스케줄 트리거 등에서 사용할 시간대
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+
+      # ===== 데이터베이스 설정 =====
+      # DB 유형 (PostgreSQL 사용)
       - DB_TYPE=postgresdb
+      # PostgreSQL 컨테이너 호스트명 (Docker 내부 네트워크)
       - DB_POSTGRESDB_HOST=postgres
+      # PostgreSQL 기본 포트
       - DB_POSTGRESDB_PORT=5432
+      # 데이터베이스 이름 (.env에서 로드)
       - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      # DB 접속 계정 (.env에서 로드)
       - DB_POSTGRESDB_USER=${POSTGRES_NON_ROOT_USER}
+      # DB 접속 비밀번호 (.env에서 로드)
       - DB_POSTGRESDB_PASSWORD=${POSTGRES_NON_ROOT_PASSWORD}
+
+      # ===== 실행 모드 설정 (고정값) =====
+      # 큐 기반 실행 모드 (Redis 사용, 대규모 워크플로우에 적합)
       - EXECUTIONS_MODE=queue
+      # Redis 호스트명 (Docker 내부 네트워크)
       - QUEUE_BULL_REDIS_HOST=redis
+      # 큐 헬스체크 활성화
       - QUEUE_HEALTH_CHECK_ACTIVE=true
+
+      # ===== 성능 및 보안 설정 (고정값) =====
+      # Task Runner 활성화 (워크플로우 실행 성능 향상)
       - N8N_RUNNERS_ENABLED=true
+      # 수동 실행도 워커에서 처리 (메인 프로세스 부하 분산)
       - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
+      # 설정 파일 권한 검사 활성화
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      # HTTP 환경에서 쿠키 사용 허용 (프록시 뒤에서 HTTP 사용 시)
       - N8N_SECURE_COOKIE=false
-    links:
-      - postgres
-      - redis
     volumes:
-      - ./n8n_data:/home/node/.n8n
-      - ./config:/home/node/config
+      - ./storage/n8n_storage:/home/node/.n8n
+      - ./config/n8n:/home/node/config
     depends_on:
       redis:
         condition: service_healthy
@@ -41,7 +102,8 @@ services:
         condition: service_healthy
     restart: always
     networks:
-      - n8n_network
+      network:
+        ipv4_address: 172.26.0.20
 
   postgres:
     image: postgres:latest
@@ -51,7 +113,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
     volumes:
-      - ./postgres_data:/var/lib/postgresql
+      - ./storage/postgres_storage:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
       interval: 5s
@@ -59,22 +121,23 @@ services:
       retries: 10
     restart: always
     networks:
-      - n8n_network
+      network:
+        ipv4_address: 172.26.0.30
 
   redis:
     image: redis:alpine
     container_name: n8n_redis
     restart: always
     volumes:
-      - ./redis_storage:/data
+      - ./storage/redis_storage:/data
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
-      - n8n_network
-
+      network:
+        ipv4_address: 172.26.0.40
 
 volumes:
   n8n_data:
@@ -83,5 +146,9 @@ volumes:
   redis_storage:
 
 networks:
-  n8n_network:
+  network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.26.0.0/16
+          gateway: 172.26.0.1
